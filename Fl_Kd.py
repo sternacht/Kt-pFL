@@ -15,21 +15,22 @@ from Utils import *
 # Global Parameter Definition
 CLIENT_PER_MODEL = 5    # numbers of client for each model, total client will be 4* this const
 MODEL_TYPE = [ShuffleNet,Mobilenet_v3,Resnet18,Resnet50]
-KL_ROUND = 10           # numbers of updating model with KL div loss
-KD_ROUND = 200          # numbers of updating models with Knowledge Distillation method
+PRIVATE_ROUND = 5       # numbers of updating model with private datasets
+KL_ROUND = 3            # numbers of updating model with KL div loss
+KD_ROUND = 400          # numbers of updating models with Knowledge Distillation method
 GLOBAL_EPOCH = 20       # epochs for pretraing by global global dataset
 EPOCH = 20              # epochs for pretraing by global local dataset
 TRAIN_BATCH_SIZE = 64   # batch size
 INFER_BATCH_SIZE = 10000
-LR = 0.005             # learning rate 0.0001
+LR = 0.001             # learning rate 0.0001
 DOWNLOAD = False
 IF_USE_GPU = True
-DATA_PATH = r'C:\Users\nckubot65904\Desktop\5\code\paper_implement\FedDyn-master\Data\CIFAR10_20_Dirichlet_0.600'
 SAVE_PATH = r'C:\Users\nckubot65904\Desktop\5\code\paper_implement\model_save'
 method = 'KtpFl'
-PROJECT = f'{method}_2class_C{CLIENT_PER_MODEL*len(MODEL_TYPE)}_R{KD_ROUND}_KL_sgd'
+classes = 5
+PROJECT = f'{method}_{classes}classuniV_C{CLIENT_PER_MODEL*len(MODEL_TYPE)}_R{KD_ROUND}_KLwopre_sgd'
 # PROJECT = 'test'
-num_worker = 4
+num_worker = 10
 penalty_ratio = 0.2
 public_rate = 0.5       # seperate test dataset into public dataset and test dataset, this control the size of public dataset
 # private_dataset = Noniid_dataset_2class(20)
@@ -46,7 +47,9 @@ if __name__ == '__main__':
     for m in MODEL_TYPE:
         for i in range(CLIENT_PER_MODEL):
             Models.append(m(num_classes=10).cuda())
-    private_dataset, public_dataset, test_dataset = Noniid_dataset_2class(len(Models))
+    data_distribution = locals()[f'Noniid_dataset_{classes}class_uniformvalid']
+
+    private_dataset, public_dataset, test_dataset = data_distribution(len(Models))
     
     Optimizers = []
     Train_loaders = []
@@ -114,27 +117,28 @@ if __name__ == '__main__':
         pretrain_task.append([model,
                               optim,
                               path.format('init'),
-                              GLOBAL_EPOCH,
+                              150,
                               CE_Loss,
                               Global_loader, 
                               val_loader,
                               f'Model {m_idx:3} Global',
                               path.format('pretrain'),
+                              Model_Identify[m_idx],
                               ])
-    pretrained = pool.starmap(train, pretrain_task)
+    # pretrained = pool.starmap(train, pretrain_task)
 
-    for midx, history in enumerate(pretrained):
-        for key, values in history.items():
-            for iter, value in enumerate(values):
-                if writer:
-                    writer.add_scalar(f'pre/{midx}/{key}', value, iter)
+    # for midx, history in enumerate(pretrained):
+    #     for key, values in history.items():
+    #         for iter, value in enumerate(values):
+    #             if writer:
+    #                 writer.add_scalar(f'pre/{midx}/{key}', value, iter)
 
 ###     Test model before KD method
 
     accBeforekd = []
     for m_idx, (model,path) in enumerate(zip(Models, Load_Path)):
 
-        model_optim = torch.load(path.format('pretrain'), map_location=device)
+        model_optim = torch.load(path.format('init'), map_location=device)
         model.load_state_dict(model_optim['model'])
         accuracy = 0
         loss = 0
@@ -170,24 +174,25 @@ if __name__ == '__main__':
     for kd_round in range(KD_ROUND):
         #   Train by private data
         private_task = []
-        for m_idx, (model, optim, path, trn_loader, val_loader) in enumerate(zip(Models, Optimizers, Load_Path, Train_loaders, Val_loaders)):
-            if kd_round == 0:
-                model_dir = 'pretrain'
-            else:
-                model_dir = PROJECT
-            private_task.append([model,
-                                 optim,
-                                 path.format(model_dir),
-                                 KL_ROUND,
-                                 CE_Loss,
-                                 trn_loader,
-                                 val_loader,
-                                 f'private training {m_idx:2}',
-                                 path.format(PROJECT),
-                                 Model_Identify[m_idx],
-                                 ])
-        
-        private_trained = pool.starmap(train, private_task)
+        if kd_round%1 == 0:
+            for m_idx, (model, optim, path, trn_loader, val_loader) in enumerate(zip(Models, Optimizers, Load_Path, Train_loaders, Val_loaders)):
+                if kd_round == 0:
+                    model_dir = 'init'
+                else:
+                    model_dir = PROJECT
+                private_task.append([model,
+                                    optim,
+                                    path.format(model_dir),
+                                    PRIVATE_ROUND,
+                                    CE_Loss,
+                                    trn_loader,
+                                    val_loader,
+                                    f'private training {m_idx:2}',
+                                    path.format(PROJECT),
+                                    Model_Identify[m_idx],
+                                    ])
+            
+            private_trained = pool.starmap(train, private_task)
         #   get soft prediction
 
         softpred_task = []
@@ -226,7 +231,7 @@ if __name__ == '__main__':
                             KL_ROUND,
                             KL_Loss,
                             kd_loader,
-                            Test_loader,
+                            val_loader,
                             f'Model {m_idx:2} Round: {kd_round:3}/{KD_ROUND}',
                             path.format(PROJECT),
                             Model_Identify[m_idx],
@@ -250,18 +255,18 @@ if __name__ == '__main__':
                         50,
                         CE_Loss,
                         trn_loader,
-                        Test_loader,
+                        val_loader,
                         f'Model {m_idx:3} Round: {kd_round:2}/{KD_ROUND}',
                         path.format('transfer'),
                         ])
     
-    local = pool.starmap(train, KL_task)
+    # local = pool.starmap(train, KL_task)
 
-    for midx, history in enumerate(local):
-        for key, values in history.items():
-            for iter, value in enumerate(values):
-                if writer:
-                    writer.add_scalar(f'local/{midx}/{key}', value, iter)
+    # for midx, history in enumerate(local):
+    #     for key, values in history.items():
+    #         for iter, value in enumerate(values):
+    #             if writer:
+    #                 writer.add_scalar(f'local/{midx}/{key}', value, iter)
 
 ###   Test models after KD methods
     accAfterkd = []
@@ -315,4 +320,10 @@ if __name__ == '__main__':
     #     print(f'Model {idx:2}: {acc3:.4f} -> acc {acc1:.4f} -> {acc2:.4f}')
     
     for idx, (acc1, acc2) in enumerate(zip(accBeforekd, accAfterkd)):
-        print(f'Model {idx:2}: acc {acc1:.4f} -> {acc2:.4f}')
+        print(f'Model {idx:2} {Models[idx].get_name():15}: acc {acc1:.4f} -> {acc2:.4f}')
+        
+    for midx in range(len(Models)):
+        if writer:
+            writer.add_scalar(f'Test/{midx}', accBeforekd[midx], 0)
+            writer.add_scalar(f'Test/{midx}', accAfterkd[midx], 1)
+

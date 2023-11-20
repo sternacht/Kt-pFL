@@ -21,6 +21,19 @@ Valid_transforms = transforms.Compose([
     transforms.Normalize((0.4914,0.4822,0.4465),(0.2023,0.1994,0.2010))
 ])
 
+CIFAR10_PATH = r'C:\Users\nckubot65904\Desktop\5\code\paper_implement\cifar10'
+
+def get_cifar10():
+    trainset = torchvision.datasets.CIFAR10(root=CIFAR10_PATH,
+                                            train=True,
+                                            download=False,
+                                            transform=None)
+    testset = torchvision.datasets.CIFAR10(root=CIFAR10_PATH,
+                                           train=False,
+                                           download=False,
+                                           transform=None)
+    return trainset, testset
+
 class ImageDataset(Dataset):
     def __init__(self, 
                  idx=0, 
@@ -102,25 +115,19 @@ class BaseDataset(Dataset):
             label = one_hot(label, num_classes=10)[0].float()
         return image, label
     
-def Noniid_dataset_2class(N_client, publice_rate=0.5):
-    root_path = r'C:\Users\nckubot65904\Desktop\5\code\paper_implement\cifar10'
-    trainset = torchvision.datasets.CIFAR10(root=root_path,
-                                            train=True,
-                                            download=True,
-                                            transform=None)
-    testset = torchvision.datasets.CIFAR10(root=root_path,
-                                           train=False,
-                                           download=True,
-                                           transform=None)
+def Noniid_dataset_2class(N_client, public_rate=0.5):
+    trainset, testset = get_cifar10()
     private_dataset = []
     classes = [i for i in range(10)]
     
     for n in range(N_client):
         if len(classes) == 0:
             classes = [i for i in range(10)]
-        client_class = np.random.choice(len(classes),2, replace=False)
-        client_class.sort()
-        private_classes = [classes.pop(client_class[1]),classes.pop(client_class[0])]
+        # client_class = np.random.choice(len(classes),2, replace=False)
+        # client_class.sort()
+        client_class = classes[:2]
+        # private_classes = [classes.pop(client_class[1]),classes.pop(client_class[0])]
+        private_classes = [classes.pop(classes.index(client_class[1])),classes.pop(classes.index(client_class[0]))]
         idx = [(c in private_classes) for c in trainset.targets]
         private_x = trainset.data[idx]
         private_y = np.array(trainset.targets)[idx]
@@ -132,9 +139,9 @@ def Noniid_dataset_2class(N_client, publice_rate=0.5):
                                 "valid_X":private_val_x, "valid_Y":private_val_y,
                                 "class":f'{private_classes[0]},{private_classes[1]}'})
     
-    public_x, test_x, public_y, test_y= train_test_split(testset.data, 
+    test_x, public_x, test_y, public_y= train_test_split(testset.data, 
                                                          np.array(testset.targets), 
-                                                         test_size=publice_rate, 
+                                                         test_size=public_rate, 
                                                          stratify=np.array(testset.targets))
                                                          
     public_dataset = {"X":public_x,"Y":public_y}
@@ -142,17 +149,99 @@ def Noniid_dataset_2class(N_client, publice_rate=0.5):
 
     return private_dataset, public_dataset, test_dataset
 
+def Noniid_dataset_2class_uniformvalid(N_client, public_rate=0.5, valid_size=0.1):
+    trainset, testset = get_cifar10()
+    X, Y = trainset.data, np.array(trainset.targets)
+    train_x, valid_x, train_y, valid_y= train_test_split(X, 
+                                                         Y, 
+                                                         test_size=valid_size,
+                                                         stratify=Y)
+    private_dataset = []
+    classes = [i for i in range(10)]
+    for n in range(N_client):
+        if len(classes) == 0:
+            classes = [i for i in range(10)]
+        client_class = np.random.choice(len(classes),2, replace=False)
+        client_class.sort()
+        private_classes = [classes.pop(client_class[1]),classes.pop(client_class[0])]
+        idx = [(c in private_classes) for c in train_y]
+        private_x = train_x[idx]
+        private_y = train_y[idx]
+        private_dataset.append({"train_X":private_x, "train_Y":private_y,
+                                "valid_X":valid_x, "valid_Y":valid_y,
+                                "class":f'{private_classes[0]},{private_classes[1]}'})
+    test_x, public_x, test_y, public_y= train_test_split(testset.data, 
+                                                         np.array(testset.targets), 
+                                                         test_size=public_rate, 
+                                                         stratify=np.array(testset.targets))
+    public_dataset = {"X":public_x,"Y":public_y}
+    test_dataset = {"X":test_x,"Y":test_y}
 
-def Noniid_dataset_5class(N_client, publice_rate=0.5):
-    root_path = r'C:\Users\nckubot65904\Desktop\5\code\paper_implement\cifar10'
-    trainset = torchvision.datasets.CIFAR10(root=root_path,
-                                            train=True,
-                                            download=True,
-                                            transform=None)
-    testset = torchvision.datasets.CIFAR10(root=root_path,
-                                           train=False,
-                                           download=True,
-                                           transform=None)
+    return private_dataset, public_dataset, test_dataset
+    
+def Noniid_dataset_3class_uniformvalid(N_client, public_rate=0.5, valid_size=0.1):
+    trainset, testset = get_cifar10()
+    X, Y = trainset.data, np.array(trainset.targets)
+    train_x, valid_x, train_y, valid_y= train_test_split(X, 
+                                                         Y, 
+                                                         test_size=valid_size,
+                                                         stratify=Y)
+    private_dataset = []
+    classes = [i for i in range(10)]
+    for n in range(N_client):
+        if len(classes) < 3:
+            classes = [i for i in range(10)]
+        client_class = np.random.choice(len(classes),3, replace=False)
+        client_class.sort()
+        private_classes = [classes.pop(client_class[2]),classes.pop(client_class[1]),classes.pop(client_class[0])]
+        idx = [(c in private_classes) for c in train_y]
+        private_x = train_x[idx]
+        private_y = train_y[idx]
+        private_dataset.append({"train_X":private_x, "train_Y":private_y,
+                                "valid_X":valid_x, "valid_Y":valid_y,
+                                "class":f'{private_classes[0]},{private_classes[1]},{private_classes[2]}'})
+    test_x, public_x, test_y, public_y= train_test_split(testset.data, 
+                                                         np.array(testset.targets), 
+                                                         test_size=public_rate, 
+                                                         stratify=np.array(testset.targets))
+    public_dataset = {"X":public_x,"Y":public_y}
+    test_dataset = {"X":test_x,"Y":test_y}
+
+    return private_dataset, public_dataset, test_dataset
+        
+def Noniid_dataset_5class_uniformvalid(N_client, public_rate=0.5, valid_size=0.1):
+    trainset, testset = get_cifar10()
+    X, Y = trainset.data, np.array(trainset.targets)
+    train_x, valid_x, train_y, valid_y= train_test_split(X, 
+                                                         Y, 
+                                                         test_size=valid_size,
+                                                         stratify=Y)
+    private_dataset = []
+    classes = [i for i in range(10)]
+    for n in range(N_client):
+        if len(classes) == 0:
+            classes = [i for i in range(10)]
+        client_class = np.random.choice(len(classes),5, replace=False)
+        client_class.sort()
+        private_classes = [classes.pop(client_class[4]),classes.pop(client_class[3]),
+                           classes.pop(client_class[2]),classes.pop(client_class[1]),classes.pop(client_class[0])]
+        idx = [(c in private_classes) for c in train_y]
+        private_x = train_x[idx]
+        private_y = train_y[idx]
+        private_dataset.append({"train_X":private_x, "train_Y":private_y,
+                                "valid_X":valid_x, "valid_Y":valid_y,
+                                "class":f'{private_classes[0]},{private_classes[1]},{private_classes[2]},{private_classes[3]},{private_classes[4]}'})
+    test_x, public_x, test_y, public_y= train_test_split(testset.data, 
+                                                         np.array(testset.targets), 
+                                                         test_size=public_rate, 
+                                                         stratify=np.array(testset.targets))
+    public_dataset = {"X":public_x,"Y":public_y}
+    test_dataset = {"X":test_x,"Y":test_y}
+
+    return private_dataset, public_dataset, test_dataset
+    
+def Noniid_dataset_5class(N_client, public_rate=0.5):
+    trainset, testset = get_cifar10()
     private_dataset = []
     classes = [i for i in range(10)]
     
@@ -174,10 +263,11 @@ def Noniid_dataset_5class(N_client, publice_rate=0.5):
                                 "valid_X":private_val_x, "valid_Y":private_val_y,
                                 "class":f'{private_classes[0]},{private_classes[1]},{private_classes[2]},{private_classes[3]},{private_classes[4]}'})
     
-    public_x, test_x, public_y, test_y= train_test_split(testset.data, 
+    test_x, public_x, test_y, public_y= train_test_split(testset.data, 
                                                          np.array(testset.targets), 
-                                                         test_size=publice_rate, 
-                                                         stratify=np.array(testset.targets))
+                                                         test_size=public_rate, 
+                                                         stratify=np.array(testset.targets),
+                                                         random_state=1)
                                                          
     public_dataset = {"X":public_x,"Y":public_y}
     test_dataset = {"X":test_x,"Y":test_y}
@@ -187,14 +277,19 @@ def Noniid_dataset_5class(N_client, publice_rate=0.5):
 
     
 if __name__ == "__main__":
-    root_path = "C:\\Users\\nckubot65904\\Desktop\\5\\code\\paper_implement\\cifar10"
-    trainset = torchvision.datasets.CIFAR10(root=root_path,
-                                            train=True,
-                                            download=False,
-                                            transform=None)
-    private_classes = [0,1]
-    idx = [c in private_classes for c in trainset.targets]
-    private_x = trainset.data[idx]
-    private_y = np.array(trainset.targets)[idx]
-    print(len(private_x))
+    train, public, test = Noniid_dataset_2class_uniformvalid(20,0.6,0.01)
+    print(train[0]["train_X"].shape)
+    print(train[0]["train_Y"].shape)
+    print(train[0]["valid_X"].shape)
+    print(train[0]["valid_Y"].shape)
+    print(public["X"].shape)
+    print(public["Y"].shape)
+    print(test["X"].shape)
+    print(test["Y"].shape)
+    PATH = r'C:\Users\nckubot65904\Desktop\5\code\paper_implement\FedDyn-master\Data\CIFAR10_20_Dirichlet_0.600'
+    datasets = np.load(os.path.join(PATH,'clnt_x.npy'))[0]
+    labels = np.load(os.path.join(PATH,'clnt_y.npy'))[0]
+    datasets = datasets.transpose((0,2,3,1))
+    print(datasets.shape)
+    print(labels.shape)
         

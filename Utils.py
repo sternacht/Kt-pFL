@@ -33,6 +33,9 @@ def get_soft_prediction(outputs):
     return soft_y
 
 def split_val_dataset(val_data, val_label, num_clients, bs=64):
+    '''
+    abadon function
+    '''
     Val_loaders = []
     vox, voy = val_data, val_label
     for i in range(num_clients, 1, -1):
@@ -63,7 +66,9 @@ def train(model, optim, path, epoches, loss_func, trn_loader, val_loader=None, o
         loss = nn.CrossEntropyLoss()
     model_optim = torch.load(path, map_location=device)
     model.load_state_dict(model_optim['model'])
-    optim.load_state_dict(model_optim['optim'])
+    # optim.load_state_dict(model_optim['optim'])
+    optim = torch.optim.SGD(model.parameters(), lr=0.005)
+    optim.zero_grad()
     # model.cuda()
     model.zero_grad()
     out = ''
@@ -81,6 +86,8 @@ def train(model, optim, path, epoches, loss_func, trn_loader, val_loader=None, o
         groundtruth = np.zeros(10).astype(np.int64)
         for iter, (x, y) in enumerate(trn_loader):
             x = x.cuda()
+            # y1,y2 = y
+            # y1.cuda()
             y = y.cuda()
             output = model(x)
             if epoch == 0 and iter == 0:
@@ -272,13 +279,13 @@ def get_models_logits(raw_logits, weight_alpha, N_models, penalty_ratio): #raw_l
             gradsum = torch.sum(gradabs)
             gradavg = gradsum.item() / (N_models)
             grad_lr = 1.0
-            # for i in range(5): #0.1
-            #     if gradavg > 0.01:
-            #         gradavg = gradavg*1.0/5
-            #         grad_lr = grad_lr/5                
-            #     if gradavg < 0.01:
-            #         gradavg = gradavg*1.0*5
-            #         grad_lr = grad_lr*5
+            for i in range(5): #0.1
+                if gradavg > 0.01:
+                    gradavg = gradavg*1.0/5
+                    grad_lr = grad_lr/5                
+                if gradavg < 0.01:
+                    gradavg = gradavg*1.0*5
+                    grad_lr = grad_lr*5
             # print("grad_lr:", grad_lr)
             weight.sub_(weight.grad*grad_lr)
             #weight.sub_(weight.grad*50)
